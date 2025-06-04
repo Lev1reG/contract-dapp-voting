@@ -4,20 +4,19 @@ pragma solidity ^0.8.20;
 contract VotingSession {
     address public admin;
 
-    uint256 public votingStart;
-    uint256 public votingEnd;
-    bool public sessionInitialized;
+    struct Session {
+        uint256 start;
+        uint256 end;
+        bool initialized;
+    }
 
-    event VotingSessionStarted(uint256 startTime, uint256 endTime);
-    event VotingSessionEnded(uint256 endTime);
+    mapping(uint256 => Session) public sessions;
+
+    event VotingSessionCreated(uint256 indexed sessionId, uint256 start, uint256 end);
+    event VotingSessionEnded(uint256 indexed sessionId, uint256 endTime);
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "Only admin can call this.");
-        _;
-    }
-
-    modifier sessionOngoing() {
-        require(isVotingOpen(), "Voting is not open.");
         _;
     }
 
@@ -25,30 +24,22 @@ contract VotingSession {
         admin = msg.sender;
     }
 
-    function startVoting(uint256 startTime, uint256 endTime) external onlyAdmin {
-        require(!sessionInitialized, "Session already started.");
-        require(endTime > startTime, "End must be after start.");
-        require(endTime > block.timestamp, "End must be in future.");
+    function createSession(uint256 sessionId, uint256 start, uint256 end) external onlyAdmin {
+        require(!sessions[sessionId].initialized, "Already created");
+        require(end > start && end > block.timestamp, "Invalid time");
 
-        votingStart = startTime;
-        votingEnd = endTime;
-        sessionInitialized = true;
-
-        emit VotingSessionStarted(startTime, endTime);
+        sessions[sessionId] = Session(start, end, true);
+        emit VotingSessionCreated(sessionId, start, end);
     }
 
-    function endVoting() external onlyAdmin {
-        require(sessionInitialized, "No session to end.");
-        votingEnd = block.timestamp;
-        emit VotingSessionEnded(votingEnd);
+    function endSession(uint256 sessionId) external onlyAdmin {
+        require(sessions[sessionId].initialized, "Not initialized");
+        sessions[sessionId].end = block.timestamp;
+        emit VotingSessionEnded(sessionId, block.timestamp);
     }
 
-    function isVotingOpen() public view returns (bool) {
-        return sessionInitialized && block.timestamp >= votingStart && block.timestamp <= votingEnd;
-    }
-
-    function getRemainingTime() external view returns (uint256) {
-        if (block.timestamp >= votingEnd) return 0;
-        return votingEnd - block.timestamp;
+    function isVotingOpen(uint256 sessionId) public view returns (bool) {
+        Session memory s = sessions[sessionId];
+        return s.initialized && block.timestamp >= s.start && block.timestamp <= s.end;
     }
 }
