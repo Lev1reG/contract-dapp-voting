@@ -2,82 +2,87 @@
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-import "forge-std/console.sol"; // Add console import
 import "../src/Voting.sol";
 
 contract VotingTest is Test {
-    Voting voting;
-    address owner = address(0xABCD);
-    address alice = address(0x1111);
-    address bob = address(0x2222);
-    uint256 sessionId = 1;
+    Voting public voting;
+
+    address public owner = address(1);
+    address public alice = address(2); // eligible voter
+    address public bob = address(3); // ineligible voter
+    address public candidate1 = address(4);
+    address public candidate2 = address(5);
+
+    uint256 public sessionId = 1;
 
     function setUp() public {
-        // Label wallet[0] sebagai owner
         vm.prank(owner);
         voting = new Voting();
-        console.log("Voting contract deployed at:", address(voting));
+
+        // Assign ownership manually since Voting uses Ownable(msg.sender)
+        vm.startPrank(owner);
+        voting.createSession(sessionId, block.timestamp + 10, block.timestamp + 100);
+        voting.registerCandidate(sessionId, candidate1, "Alice");
+        voting.registerCandidate(sessionId, candidate2, "Bob");
+
+        address[] memory voters = new address[](1);
+        voters[0] = alice;
+        voting.updateEligibility(sessionId, voters, true);
+        vm.stopPrank();
     }
 
-    function testRegisterAndVote() public {
-        console.log("=== Starting testRegisterAndVote ===");
-        
-        // 1. Register dua kandidat
-        vm.prank(owner);
-        voting.registerCandidate(sessionId, alice, "Alice");
-        console.log("Registered candidate Alice:", alice);
-
-        vm.prank(owner);
-        voting.registerCandidate(sessionId, bob, "Bob");
-        console.log("Registered candidate Bob:", bob);
-
-        // 2. Alice vote ke Bob
-        vm.prank(alice);
-        voting.vote(sessionId, bob);
-        console.log("Alice voted for Bob");
-
-        // 3. Bob vote ke dirinya sendiri
-        vm.prank(bob);
-        voting.vote(sessionId, bob);
-        console.log("Bob voted for himself");
-
-        // 4. Cek hasil voteCount
-        uint256 countBob = voting.getVoteCount(sessionId, bob);
-        console.log("Bob's vote count:", countBob);
-        assertEq(countBob, 2);
-
-        // 5. Cek getCandidates mengembalikan array benar
-        (address[] memory addrs, string[] memory names) = voting.getCandidates(
-            sessionId
-        );
-        console.log("Total candidates:", addrs.length);
-        for (uint i = 0; i < addrs.length; i++) {
-            console.log("Candidate %s: %s at address %s", i, names[i], addrs[i]);
-        }
-        assertEq(addrs.length, 2);
-        assertEq(names[0], "Alice");
-        assertEq(names[1], "Bob");
-        
-        console.log("=== testRegisterAndVote completed successfully ===");
+    function test_Revert_When_Voting_Not_Started() public {
+        vm.startPrank(alice);
+        vm.expectRevert("Voting is not open");
+        voting.vote(sessionId, candidate1);
+        vm.stopPrank();
     }
 
-    function testCannotVoteTwice() public {
-        console.log("=== Starting testCannotVoteTwice ===");
-        
-        vm.prank(owner);
-        voting.registerCandidate(sessionId, alice, "Alice");
-        console.log("Registered candidate Alice:", alice);
+    function test_Revert_When_Not_Eligible() public {
+        vm.warp(block.timestamp + 20); // session active
+        vm.startPrank(bob);
+        vm.expectRevert("Not eligible");
+        voting.vote(sessionId, candidate1);
+        vm.stopPrank();
+    }
 
-        vm.prank(alice);
-        voting.vote(sessionId, alice);
-        console.log("Alice voted for herself");
+    function test_Revert_When_DoubleVote() public {
+        vm.warp(block.timestamp + 20);
+        vm.startPrank(alice);
+        voting.vote(sessionId, candidate1);
+        vm.expectRevert("Already voted");
+        voting.vote(sessionId, candidate2);
+        vm.stopPrank();
+    }
 
-        // Alice coba vote lagi → revert
-        console.log("Attempting to vote again with Alice (should revert)...");
-        vm.prank(alice);
-        vm.expectRevert("Already voted in this session");
-        voting.vote(sessionId, alice);
-        
-        console.log("=== testCannotVoteTwice completed successfully ===");
+    function test_Revert_When_Voting_InvalidCandidate() public {
+        vm.warp(block.timestamp + 20);
+        vm.startPrank(alice);
+        vm.expectRevert("Candidate not registered");
+        voting.vote(sessionId, address(99));
+        vm.stopPrank();
+    }
+
+    function test_Voting_Success() public {
+        vm.warp(block.timestamp + 20);
+        vm.startPrank(alice);
+        voting.vote(sessionId, candidate1);
+        vm.stopPrank();
+
+        uint256 count = voting.getVoteCount(sessionId, candidate1);
+        assertEq(count, 1);
+    }
+
+    function test_GetWinner() public {
+        vm.warp(block.timestamp + 20);
+        vm.startPrank(alice);
+        voting.vote(sessionId, candidate2); // alice votes for candidate2
+        vm.stopPrank();
+
+        (address winnerAddr, string memory winnerName, uint256 votes) = voting.getWinner(sessionId);
+
+        assertEq(winnerAddr, candidate2);
+        assertEq(winnerName, "Bob");
+        assertEq(votes, 1);
     }
 }
