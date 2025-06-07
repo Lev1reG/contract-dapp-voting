@@ -83,6 +83,8 @@ The voting system consists of these main components:
 - Vote counts are tracked on-chain and visible in real-time
 - After session ends, a winner is determined based on highest vote count
 
+---
+
 ## ⚙️ Testing
 
 Run the test suite with:
@@ -96,6 +98,8 @@ For more verbose output:
 ```bash
 forge test -vvv
 ```
+
+---
 
 ## 🚀 Deployment
 
